@@ -1,0 +1,127 @@
+//Michael Sorce
+//Professor Muhlbaier
+//Embedded Softwear Design
+//Code for MSP430F5529 Dev Board
+//Last Updated: 2/15/19
+
+//includes msp430 header file
+#include <msp430.h>
+
+//variable to control step size of CCR Values (used to fade colors)
+const int inc = 10;
+
+int main(void)
+{
+  WDTCTL = WDTPW + WDTHOLD;             // Stop Watchdog timer
+  P1DIR |= 0x1C;                        //P1.2, P1.3, P1.4 set to output
+  P1SEL |= 0x1C;                        //P1.2, P1.3, P1.4 set to CCR outputs (CCR1, 2, and 3 respectively)
+
+//sets CCTL1-3 to PWM mode 7 reset/set (set up for timerA0 hardware PWM)
+  TA0CCTL1 = OUTMOD_7;
+  TA0CCTL2 = OUTMOD_7;
+  TA0CCTL3 = OUTMOD_7;
+
+//Setup for TA0CCR1-3 (controls pwm for each color)
+  TA0CCR0 = 1000;// Max number the timer will count to (makes it run at 1kHz)
+  TA0CCR1 = 1000;// red
+  TA0CCR2 = 0;// green
+  TA0CCR3 = 0;// blue
+
+  TA0CTL = TASSEL_2 + MC_1 + TACLR;//timer set up: SMCLK, up mode, clear TAR
+
+
+//Timer A1 set up
+  TA1CCR0 = 25000; //initialize capture compare register 0
+  TA1CCTL0 = CCIE; //enable TimerA1 capture compare interrupt
+
+  TA1CTL = TASSEL_2 + MC_1; //Starts Timer A1: uses SM clock (1MHz), in upmode, with /2 divider
+
+  __bis_SR_register(LPM0_bits + GIE);// Enter LPM0 and enable general interrupt
+  __no_operation();// For debugger
+}
+
+//timer interrupt service
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0 (void)
+{
+//FADE CONTROL
+
+    // fade red to yellow
+    //if red = max and green != max and blue = 0 increment green
+    if(TA0CCR1 == 1000 && TA0CCR2 != 1000 && TA0CCR3 == 0)//red to yellow
+    {
+        TA0CCR2 = TA0CCR2 + inc;//inc green
+    }
+
+    // fade from yellow to green
+    //else if red and green = max and blue = 0 decrement red
+    else if(TA0CCR1 > 0 && TA0CCR2 == 1000 && TA0CCR3 == 0)//yellow to green
+    {
+        TA0CCR1 = TA0CCR1 - inc;//dec red
+    }
+
+    // fade from green to teal
+    //else if red = 0 and green = max increment blue
+    else if(TA0CCR1 == 0 && TA0CCR2 == 1000 && TA0CCR3 != 1000)
+    {
+        TA0CCR3 = TA0CCR3 + inc;//inc blue
+    }
+
+    // fade from teal to blue
+    //else if green and blue = max decrement green
+    else if(TA0CCR2 > 0 && TA0CCR3 == 1000 && TA0CCR1 == 0)
+    {
+        TA0CCR2 = TA0CCR2 - inc;//dec green
+    }
+
+    // fade from blue to purple
+    //else if green = 0 and blue = max increment red
+    else if(TA0CCR2 == 0 && TA0CCR3 == 1000 && TA0CCR1 < 1000)
+    {
+        TA0CCR1 = TA0CCR1 + inc;//inc red
+    }
+
+    // fade from purple to white
+    //else if blue = max and red = max increment green
+    else if(TA0CCR1 == 1000 && TA0CCR3 == 1000 && TA0CCR2 < 1000)
+    {
+        TA0CCR2 = TA0CCR2 + inc;//inc green
+    }
+
+    // fade from white to red
+    //else if red = max decrement blue and green
+    else if(TA0CCR1 == 1000 && TA0CCR2 > 0 && TA0CCR3 > 0)
+    {
+        TA0CCR3 = TA0CCR3 - inc;//dec blue and green
+        TA0CCR2 = TA0CCR2 - inc;
+    }
+
+    // fade from anything not matching the above pattern to red
+    //else if green > blue decrement green
+    else if(TA0CCR2 > TA0CCR3)
+    {
+        TA0CCR2 = TA0CCR2 - inc;//dec green
+    }
+
+    //else
+    //if red < max then increment red
+    //if blue != 0 then decrement blue
+    //if green != 0 then decrement green
+    else
+    {
+        if(TA0CCR1 < 1000)
+        {
+            TA0CCR1 = TA0CCR1 + inc;
+        }
+        if(TA0CCR2 != 0)
+        {
+            TA0CCR2 = TA0CCR2 - inc;
+        }
+        if(TA0CCR3 != 0)
+        {
+            TA0CCR3 = TA0CCR3 - inc;
+        }
+    }
+
+
+}
