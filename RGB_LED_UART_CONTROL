@@ -1,0 +1,60 @@
+//Embedded Software Systems
+//Michael Sorce
+//Last Updated - 12/16/19
+//Code for MSP430F5529
+
+#include <msp430.h>
+
+
+int main(void)
+{
+  P1DIR |= BIT0;                            // P1.0 set as output
+
+  //Timer A1 set up
+  TA1CCR0 = 25000; //initialize capture compare register 0
+  TA1CCTL0 = CCIE; //enable TimerA1 capture compare interrupt
+
+
+  WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
+  P4SEL = BIT4+BIT5;                        // P4.4/P4.5 TXD/RXD
+  UCA1CTL1 |= UCSWRST;                      // **Put state machine in reset**
+  UCA1CTL1 |= UCSSEL_2;                     // SMCLK
+  UCA1BR0 = 6;                              // 1MHz 9600 (see User's Guide)
+  UCA1BR1 = 0;                              // 1MHz 9600
+  UCA1MCTL = UCBRS_0 + UCBRF_13 + UCOS16;   // Modln UCBRSx=0, UCBRFx=0,
+                                            // over sampling
+  UCA1CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+  UCA1IE |= UCRXIE;                         // Enable USCI_A0 RX interrupt
+
+  __bis_SR_register(GIE);       // Enter LPM0, interrupts enabled
+
+  while(1);
+
+
+}
+
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0 (void)
+{
+    P1OUT ^= BIT0;                          // XOR P1.0
+}
+
+#pragma vector=USCI_A1_VECTOR
+__interrupt void USCI_A1_ISR(void)
+{
+  switch(__even_in_range(UCA1IV,4))
+  {
+  case 0:break;                             // Vector 0 - no interrupt
+  case 2:                                   // Vector 2 - RXIFG
+    if(UCA1RXBUF == 114)
+    {
+
+        TA1CTL = TASSEL_2 + MC_1 + ID_3; //Starts Timer A1: uses SM clock (1MHz), in upmode, with /2 divider
+    }
+    while (!(UCA1IFG&UCTXIFG));             // USCI_A0 TX buffer ready?
+
+    break;
+  case 4:break;                             // Vector 4 - TXIFG
+  default: break;
+  }
+}
