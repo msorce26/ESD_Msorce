@@ -1,0 +1,70 @@
+//Embedded Software Systems
+//Michael Sorce
+//Last Updated - 12/16/19
+//Code for MSP430F5529
+
+//include msp430 header file
+#include <msp430.h>
+//include stdio header file (for printf function)
+#include <stdio.h>
+//include sting header file
+#include <string.h>
+
+//declares integer i (unsigned, can be changed)
+volatile unsigned int i;
+//declares size_t to hold size of string
+volatile size_t sizeString;
+
+
+int main(void)
+{
+  WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
+  P4SEL = BIT4+BIT5;                        // Sets P4.4 to UART TX mode, P4.5 to UART RX mode
+  UCA1CTL1 |= UCSWRST;                      // **Put state machine in reset**
+  UCA1CTL1 |= UCSSEL_2;                     // UART uses SMCLOCK
+  UCA1BR0 = 6;                              // 1MHz 9600 (see User's Guide)
+  UCA1BR1 = 0;                              // 1MHz 9600
+  UCA1MCTL = UCBRS_0 + UCBRF_13 + UCOS16;   // Modln UCBRSx=0, UCBRFx=0,
+                                            // over sampling
+  UCA1CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+  UCA1IE |= UCRXIE;                         // Enable USCI_A0 RX interrupt
+
+  __bis_SR_register(GIE);       // Enter LPM0, interrupts enabled
+
+  while(1)
+  {
+  }
+
+
+}
+
+//Overrides stdio printf function
+void myprintf (volatile char string[], int length)
+{
+    //volatile char string[];
+    //sizeString = sizeof(string)/sizeof(string[0])-1;
+
+    //loop transmits each character of input string over UART
+    for (i = 0; i < length; i++)
+     {
+         while (!(UCA1IFG&UCTXIFG));            //while not transmitting or receiving
+         UCA1TXBUF = string[i];                 //transmit single character of string at index i
+     }
+}
+
+
+//UART interrupt Vector
+#pragma vector=USCI_A1_VECTOR
+__interrupt void USCI_A1_ISR(void)
+{
+  switch(__even_in_range(UCA1IV,4))
+  {
+  case 0:break;                             // Vector 0 - no interrupt
+  case 2:                                   // Vector 2 - RXIFG
+    while (!(UCA1IFG&UCTXIFG));             // USCI_A0 TX buffer ready?
+    myprintf("Hello Embedded World!", 21);
+    break;
+  case 4:break;                             // Vector 4 - TXIFG
+  default: break;
+  }
+}
