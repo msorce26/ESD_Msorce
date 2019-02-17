@@ -1,0 +1,163 @@
+//Embedded Software Systems
+//Michael Sorce
+//Last Updated - 12/16/19
+//Code for MSP430F5529
+
+#include <msp430.h>
+
+//bool to control if color should increase or decrease brightness
+int r_up = 0;
+int g_up = 0;
+int b_up = 0;
+
+//controls increment of colors PWM increase/decrease
+int inc = 50;
+
+int main(void)
+{
+    WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
+
+  //LED P1.0 used for testing
+  P1DIR |= BIT0;                            // P1.0 set as output
+
+
+  //Timer A1 set up
+  TA1CCR0 = 25000; //initialize capture compare register 0
+  TA1CCTL0 = CCIE; //enable TimerA1 capture compare interrupt
+
+
+  //UART Set Up
+  P4SEL = BIT4+BIT5;                        // P4.4/P4.5 TXD/RXD
+  UCA1CTL1 |= UCSWRST;                      // **Put state machine in reset**
+  UCA1CTL1 |= UCSSEL_2;                     // SMCLK
+  UCA1BR0 = 6;                              // 1MHz 9600 (see User's Guide)
+  UCA1BR1 = 0;                              // 1MHz 9600
+  UCA1MCTL = UCBRS_0 + UCBRF_13 + UCOS16;   // Modln UCBRSx=0, UCBRFx=0,
+                                            // over sampling
+  UCA1CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+  UCA1IE |= UCRXIE;                         // Enable USCI_A0 RX interrupt
+
+//PWM Hardware Setup
+  P1DIR |= 0x1C;                        //P1.2, P1.3, P1.4 set to output
+  P1SEL |= 0x1C;                        //P1.2, P1.3, P1.4 set to CCR outputs (CCR1, 2, and 3 respectively)
+
+  //sets CCTL1-3 to PWM mode 7 reset/set (set up for timerA0 hardware PWM)
+  TA0CCTL1 = OUTMOD_7;
+  TA0CCTL2 = OUTMOD_7;
+  TA0CCTL3 = OUTMOD_7;
+
+  //Setup for TA0CCR1-3 (controls pwm for each color)
+  TA0CCR0 = 1000;// Max number the timer will count to (makes it run at 1kHz)
+  TA0CCR1 = 0;// red
+  TA0CCR2 = 0;// green
+  TA0CCR3 = 0;// blue
+
+  //Start PWM timer
+  TA0CTL = TASSEL_2 + MC_1 + TACLR;//timer set up: SMCLK, up mode, clear TAR
+
+  //Start timer A1
+  TA1CTL = TASSEL_2 + MC_1 + ID_3; //Starts Timer A1: uses SM clock (1MHz), in upmode, with /2 divider
+
+  __bis_SR_register(GIE);       // Enter LPM0, interrupts enabled
+
+  //infinite loop
+  while(1);
+
+
+}
+
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0 (void)
+{
+    //based on control variables, increase or decrease PWM
+    if(r_up == 1)
+    {
+        if(TA0CCR1 < 1000)
+        {
+            TA0CCR1 = TA0CCR1 + inc;
+        }
+    }
+    else
+    {
+        if(TA0CCR1 > 0)
+        {
+            TA0CCR1 = TA0CCR1 - inc;
+        }
+    }
+
+    if(g_up == 1)
+    {
+        if(TA0CCR2 < 1000)
+        {
+            TA0CCR2 = TA0CCR2 + inc;
+        }
+    }
+    else
+    {
+        if(TA0CCR2 > 0)
+        {
+            TA0CCR2 = TA0CCR2 - inc;
+        }
+    }
+
+    if(b_up == 1)
+    {
+        if(TA0CCR3 < 1000)
+        {
+            TA0CCR3 = TA0CCR3 + inc;
+        }
+    }
+    else
+    {
+        if(TA0CCR3 > 0)
+        {
+            TA0CCR3 = TA0CCR3 - inc;
+        }
+    }
+}
+
+#pragma vector=USCI_A1_VECTOR
+__interrupt void USCI_A1_ISR(void)
+{
+  switch(__even_in_range(UCA1IV,4))
+  {
+  case 0:break;                             // Vector 0 - no interrupt
+  case 2:                                   // Vector 2 - RXIFG
+      //changes control variables based on UART input
+      if(UCA1RXBUF == 114)//r
+      {
+          r_up = 0;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+      if(UCA1RXBUF == 82)//R
+      {
+          r_up = 1;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+      if(UCA1RXBUF == 103)//g
+      {
+          g_up = 0;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+      if(UCA1RXBUF == 71)//G
+      {
+          g_up = 1;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+      if(UCA1RXBUF == 98)//b
+      {
+          b_up = 0;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+      if(UCA1RXBUF == 66)//B
+      {
+          b_up = 1;
+          P1OUT ^= BIT0;                          // XOR P1.0
+      }
+    while (!(UCA1IFG&UCTXIFG));             // USCI_A0 TX buffer ready?
+
+    break;
+  case 4:break;                             // Vector 4 - TXIFG
+  default: break;
+  }
+}
